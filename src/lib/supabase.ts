@@ -49,6 +49,11 @@ export async function addPlayer(name: string, hcp: number): Promise<Player> {
   return data
 }
 
+export async function updatePlayerHcp(id: number, hcp: number): Promise<void> {
+  const { error } = await supabase.from('players').update({ hcp }).eq('id', id)
+  if (error) throw error
+}
+
 export async function getRoundEntries(): Promise<RoundEntry[]> {
   const { data, error } = await supabase
     .from('rounds')
