@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   getPlayers, addPlayer, getRoundEntries, submitRound, resetSeason,
-  calcStats, type Player, type RoundEntry, type PlayerStats
+  updatePlayerHcp, calcStats, type Player, type RoundEntry, type PlayerStats
 } from '@/lib/supabase'
 
 const MEDALS = ['🥇', '🥈', '🥉']
@@ -23,7 +23,6 @@ export default function Home() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  // Entry form state
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [course, setCourse] = useState('')
   const [holes, setHoles] = useState<9 | 18>(18)
@@ -35,13 +34,16 @@ export default function Home() {
   const [submitMsg, setSubmitMsg] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  // Players form state
   const [newName, setNewName] = useState('')
   const [newHcp, setNewHcp] = useState('')
   const [playerError, setPlayerError] = useState('')
   const [addingPlayer, setAddingPlayer] = useState(false)
   const [showReset, setShowReset] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [editingPlayer, setEditingPlayer] = useState<Player | null>(null)
+  const [editHcp, setEditHcp] = useState('')
+  const [editError, setEditError] = useState('')
+  const [savingHcp, setSavingHcp] = useState(false)
 
   const loadData = useCallback(async () => {
     try {
@@ -63,7 +65,6 @@ export default function Home() {
   const totalLeader = stats[0]
   const avgLeader = [...stats].filter(s => s.rounds > 0).sort((a, b) => b.avg - a.avg)[0]
 
-  // Score entry helpers
   const usedNames = scoreRows.map(r => r.playerName).filter(Boolean)
   const n = scoreRows.length
 
@@ -98,11 +99,8 @@ export default function Home() {
   }
 
   const handleSubmit = async () => {
-    const unsetPlayer = scoreRows.some(r => !r.playerName)
-    const unsetPos = scoreRows.some(r => r.position === '')
-    if (unsetPlayer) { alert('Please select a player for each row.'); return }
-    if (unsetPos) { alert('Please assign a position to each player.'); return }
-
+    if (scoreRows.some(r => !r.playerName)) { alert('Please select a player for each row.'); return }
+    if (scoreRows.some(r => r.position === '')) { alert('Please assign a position to each player.'); return }
     setSubmitting(true)
     try {
       const entries = scoreRows.map(r => ({
@@ -131,12 +129,8 @@ export default function Home() {
     const name = newName.trim()
     const hcp = parseFloat(newHcp)
     if (!name) { setPlayerError('Please enter a name.'); return }
-    if (players.find(p => p.name.toLowerCase() === name.toLowerCase())) {
-      setPlayerError('Player already exists.'); return
-    }
-    if (isNaN(hcp) || hcp < 0 || hcp > 54) {
-      setPlayerError('Please enter a valid handicap (0–54).'); return
-    }
+    if (players.find(p => p.name.toLowerCase() === name.toLowerCase())) { setPlayerError('Player already exists.'); return }
+    if (isNaN(hcp) || hcp < 0 || hcp > 54) { setPlayerError('Please enter a valid handicap (0–54).'); return }
     setAddingPlayer(true)
     try {
       await addPlayer(name, hcp)
@@ -159,6 +153,28 @@ export default function Home() {
       alert('Failed to reset. Please try again.')
     } finally {
       setResetting(false)
+    }
+  }
+
+  const openEditHcp = (p: Player) => {
+    setEditingPlayer(p)
+    setEditHcp(String(p.hcp))
+    setEditError('')
+  }
+
+  const handleSaveHcp = async () => {
+    if (!editingPlayer) return
+    const hcp = parseFloat(editHcp)
+    if (isNaN(hcp) || hcp < 0 || hcp > 54) { setEditError('Please enter a valid handicap (0–54).'); return }
+    setSavingHcp(true)
+    try {
+      await updatePlayerHcp(editingPlayer.id, hcp)
+      setEditingPlayer(null)
+      await loadData()
+    } catch {
+      setEditError('Failed to save. Please try again.')
+    } finally {
+      setSavingHcp(false)
     }
   }
 
@@ -185,7 +201,6 @@ export default function Home() {
     <div className="min-h-screen bg-gray-100 py-6 px-4">
       <div className="max-w-xl mx-auto">
 
-        {/* Header */}
         <div style={{ background: '#1B4332' }} className="rounded-t-xl px-6 py-5 flex items-center justify-between">
           <div>
             <h1 className="text-white text-xl font-medium">⛳ Chrompass Cup</h1>
@@ -194,7 +209,6 @@ export default function Home() {
           <span className="text-4xl">🏆</span>
         </div>
 
-        {/* Tabs */}
         <div style={{ background: '#145228' }} className="flex">
           {(['leaderboard', 'entry', 'players'] as const).map(t => (
             <button
@@ -212,30 +226,24 @@ export default function Home() {
           ))}
         </div>
 
-        {/* Body */}
         <div className="bg-white border border-gray-200 rounded-b-xl p-5">
 
-          {/* ── LEADERBOARD ── */}
+          {/* LEADERBOARD */}
           {tab === 'leaderboard' && (
             <div>
               <div className="grid grid-cols-2 gap-3 mb-5">
                 <div className="bg-gray-50 border-2 rounded-xl p-4" style={{ borderColor: '#B8960C' }}>
                   <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-1.5">Total points leader</p>
                   <p className="text-sm font-medium text-gray-800">{totalLeader?.name ?? '—'}</p>
-                  <p className="text-2xl font-medium mt-1" style={{ color: '#2D6A4F' }}>
-                    {totalLeader ? `${fmt(totalLeader.total)} pts` : '—'}
-                  </p>
+                  <p className="text-2xl font-medium mt-1" style={{ color: '#2D6A4F' }}>{totalLeader ? `${fmt(totalLeader.total)} pts` : '—'}</p>
                 </div>
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
                   <p className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-1.5">Avg points leader</p>
                   <p className="text-sm font-medium text-gray-800">{avgLeader?.name ?? '—'}</p>
-                  <p className="text-2xl font-medium mt-1" style={{ color: '#2D6A4F' }}>
-                    {avgLeader ? `${fmt2(avgLeader.avg)} avg` : '—'}
-                  </p>
+                  <p className="text-2xl font-medium mt-1" style={{ color: '#2D6A4F' }}>{avgLeader ? `${fmt2(avgLeader.avg)} avg` : '—'}</p>
                 </div>
               </div>
 
-              {/* Table header */}
               <div style={{ gridTemplateColumns: '36px 1fr 56px 72px 60px', background: '#1B4332', borderRadius: '8px', marginBottom: '8px', padding: '8px 10px', display: 'grid', gap: '4px' }}>
                 {['#', 'Player', 'Rounds', 'Total pts', 'Avg'].map((h, i) => (
                   <span key={h} className="text-xs font-medium uppercase tracking-wider"
@@ -245,7 +253,6 @@ export default function Home() {
 
               {stats.map((p, i) => (
                 <div key={p.name}
-                  className="rounded-lg mb-1 items-center"
                   style={{
                     display: 'grid',
                     gridTemplateColumns: '36px 1fr 56px 72px 60px',
@@ -254,6 +261,9 @@ export default function Home() {
                     border: i === 0 ? '1px solid #B8960C' : i === 1 ? '1px solid #aaa' : i === 2 ? '1px solid #8B5E3C' : '1px solid #e5e7eb',
                     borderLeft: i === 0 ? '3px solid #B8960C' : i === 1 ? '3px solid #888' : i === 2 ? '3px solid #8B5E3C' : '1px solid #e5e7eb',
                     background: '#fafafa',
+                    borderRadius: '8px',
+                    marginBottom: '4px',
+                    alignItems: 'center',
                   }}>
                   <div style={{ textAlign: 'center', fontSize: '15px' }}>{i < 3 ? MEDALS[i] : i + 1}</div>
                   <div>
@@ -272,25 +282,17 @@ export default function Home() {
             </div>
           )}
 
-          {/* ── SUBMIT SCORES ── */}
+          {/* SUBMIT SCORES */}
           {tab === 'entry' && (
             <div>
               {submitMsg && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 text-green-700 text-sm text-center">
-                  {submitMsg}
-                </div>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 text-green-700 text-sm text-center">{submitMsg}</div>
               )}
-
               <div className="grid grid-cols-3 gap-3 mb-4">
                 {[
                   { label: 'Date', el: <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-800" /> },
                   { label: 'Course', el: <input type="text" value={course} onChange={e => setCourse(e.target.value)} placeholder="e.g. Royal Norwich" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-800" /> },
-                  { label: 'Holes', el: (
-                    <select value={holes} onChange={e => setHoles(Number(e.target.value) as 9 | 18)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-800">
-                      <option value={18}>18 holes</option>
-                      <option value={9}>9 holes</option>
-                    </select>
-                  )},
+                  { label: 'Holes', el: <select value={holes} onChange={e => setHoles(Number(e.target.value) as 9 | 18)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-800"><option value={18}>18 holes</option><option value={9}>9 holes</option></select> },
                 ].map(({ label, el }) => (
                   <div key={label}>
                     <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">{label}</label>
@@ -304,12 +306,11 @@ export default function Home() {
                 <span>{bannerText()}</span>
               </div>
 
-              {/* Scorecard */}
               <div className="border border-gray-200 rounded-lg overflow-hidden mb-4">
                 <table className="w-full border-collapse" style={{ tableLayout: 'fixed' }}>
                   <thead>
                     <tr>
-                      <th style={{ background: '#145228', width: '140px', textAlign: 'left', paddingLeft: '12px', padding: '9px 8px 9px 12px', color: '#74B99A', fontSize: '11px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.6px' }}>Player</th>
+                      <th style={{ background: '#145228', width: '140px', textAlign: 'left', padding: '9px 8px 9px 12px', color: '#74B99A', fontSize: '11px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.6px' }}>Player</th>
                       <th style={{ background: '#1B4332', textAlign: 'center', padding: '9px 8px', color: '#74B99A', fontSize: '11px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.6px' }}>Position</th>
                       <th style={{ background: '#0f3d24', width: '72px', textAlign: 'center', padding: '9px 8px', color: '#74B99A', fontSize: '11px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.6px' }}>Points</th>
                       <th style={{ background: '#1B4332', width: '36px' }}></th>
@@ -322,26 +323,15 @@ export default function Home() {
                       return (
                         <tr key={row.id}>
                           <td style={{ borderTop: '1px solid #e5e7eb', background: idx % 2 === 0 ? '#f9fafb' : '#f3f4f6', padding: '6px 6px 6px 12px' }}>
-                            <select
-                              value={row.playerName}
-                              onChange={e => updateRow(row.id, 'playerName', e.target.value)}
-                              className="w-full border-none bg-transparent text-sm font-medium text-gray-800"
-                            >
+                            <select value={row.playerName} onChange={e => updateRow(row.id, 'playerName', e.target.value)} className="w-full border-none bg-transparent text-sm font-medium text-gray-800">
                               <option value="">Select...</option>
                               {players.map(p => (
-                                <option key={p.name} value={p.name} disabled={usedNames.includes(p.name) && p.name !== row.playerName}>
-                                  {p.name}
-                                </option>
+                                <option key={p.name} value={p.name} disabled={usedNames.includes(p.name) && p.name !== row.playerName}>{p.name}</option>
                               ))}
                             </select>
                           </td>
                           <td style={{ borderTop: '1px solid #e5e7eb', background: rowBg, padding: '6px', textAlign: 'center' }}>
-                            <select
-                              value={row.position}
-                              onChange={e => updateRow(row.id, 'position', e.target.value === '' ? '' : Number(e.target.value))}
-                              className="border border-gray-200 rounded text-sm bg-white text-gray-800"
-                              style={{ width: '68px', padding: '4px' }}
-                            >
+                            <select value={row.position} onChange={e => updateRow(row.id, 'position', e.target.value === '' ? '' : Number(e.target.value))} className="border border-gray-200 rounded text-sm bg-white text-gray-800" style={{ width: '68px', padding: '4px' }}>
                               <option value="">—</option>
                               {Array.from({ length: n }, (_, i) => (
                                 <option key={i + 1} value={i + 1}>{ordinal(i + 1)}</option>
@@ -362,91 +352,79 @@ export default function Home() {
               </div>
 
               <div className="flex gap-3">
-                <button
-                  onClick={addRow}
-                  disabled={scoreRows.length >= 12}
-                  className="flex-1 py-2.5 border border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-green-600 hover:text-green-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1"
-                >
+                <button onClick={addRow} disabled={scoreRows.length >= 12} className="flex-1 py-2.5 border border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-green-600 hover:text-green-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1">
                   + Add player
                 </button>
-                <button
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="px-6 py-2.5 text-white rounded-lg text-sm font-medium disabled:opacity-60"
-                  style={{ background: '#1B4332' }}
-                >
+                <button onClick={handleSubmit} disabled={submitting} className="px-6 py-2.5 text-white rounded-lg text-sm font-medium disabled:opacity-60" style={{ background: '#1B4332' }}>
                   {submitting ? 'Saving...' : 'Submit round'}
                 </button>
               </div>
             </div>
           )}
 
-          {/* ── PLAYERS ── */}
+          {/* PLAYERS */}
           {tab === 'players' && (
             <div>
-              {/* Add player form */}
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-5">
                 <h3 className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-3">Add a new player</h3>
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div>
                     <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Full name</label>
-                    <input
-                      type="text"
-                      value={newName}
-                      onChange={e => setNewName(e.target.value)}
-                      placeholder="e.g. James Smith"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-800"
-                    />
+                    <input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. James Smith" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-800" />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Current handicap</label>
-                    <input
-                      type="number"
-                      value={newHcp}
-                      onChange={e => setNewHcp(e.target.value)}
-                      placeholder="e.g. 14.2"
-                      min={0} max={54} step={0.1}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-800"
-                    />
+                    <input type="number" value={newHcp} onChange={e => setNewHcp(e.target.value)} placeholder="e.g. 14.2" min={0} max={54} step={0.1} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-800" />
                   </div>
                 </div>
                 {playerError && <p className="text-red-500 text-xs mb-2">{playerError}</p>}
-                <button
-                  onClick={handleAddPlayer}
-                  disabled={addingPlayer}
-                  className="w-full py-2.5 text-white rounded-lg text-sm font-medium disabled:opacity-60"
-                  style={{ background: '#1B4332' }}
-                >
+                <button onClick={handleAddPlayer} disabled={addingPlayer} className="w-full py-2.5 text-white rounded-lg text-sm font-medium disabled:opacity-60" style={{ background: '#1B4332' }}>
                   {addingPlayer ? 'Adding...' : '+ Add to tournament'}
                 </button>
               </div>
 
-              {/* Roster */}
               <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-                  Roster ({players.length} players)
-                </p>
-                <button
-                  onClick={() => setShowReset(true)}
-                  className="text-xs font-medium text-gray-500 border border-gray-300 rounded-lg px-3 py-1.5 hover:border-red-300 hover:text-red-500 flex items-center gap-1"
-                >
+                <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">Roster ({players.length} players)</p>
+                <button onClick={() => setShowReset(true)} className="text-xs font-medium text-gray-500 border border-gray-300 rounded-lg px-3 py-1.5 hover:border-red-300 hover:text-red-500 flex items-center gap-1">
                   ↺ Reset season
                 </button>
               </div>
 
               {players.map(p => (
-                <div key={p.name} className="flex items-center gap-3 border border-gray-200 rounded-lg p-3 mb-2 bg-gray-50">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0"
-                    style={{ background: '#D8F3DC', color: '#1B4332' }}>
+                <button key={p.name} onClick={() => openEditHcp(p)}
+                  className="w-full flex items-center gap-3 border border-gray-200 rounded-lg p-3 mb-2 bg-gray-50 hover:bg-green-50 hover:border-green-300 transition-colors text-left">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium flex-shrink-0" style={{ background: '#D8F3DC', color: '#1B4332' }}>
                     {initials(p.name)}
                   </div>
                   <span className="flex-1 text-sm font-medium text-gray-800">{p.name}</span>
-                  <span className="text-xs text-gray-400">Hcp {p.hcp}</span>
-                </div>
+                  <span className="text-xs text-gray-400 mr-1">Hcp {p.hcp}</span>
+                  <span className="text-xs text-gray-300">✎</span>
+                </button>
               ))}
 
               {players.length === 0 && (
                 <p className="text-center text-gray-400 text-sm py-6">No players yet.</p>
+              )}
+
+              {/* Edit handicap modal */}
+              {editingPlayer && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-xl p-6 max-w-xs w-full shadow-xl">
+                    <h4 className="text-base font-medium text-gray-800 mb-1">Update handicap</h4>
+                    <p className="text-sm text-gray-500 mb-4">{editingPlayer.name}</p>
+                    <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">New handicap</label>
+                    <input type="number" value={editHcp} onChange={e => setEditHcp(e.target.value)} min={0} max={54} step={0.1} autoFocus
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-white text-gray-800 mb-2"
+                      onKeyDown={e => e.key === 'Enter' && handleSaveHcp()} />
+                    {editError && <p className="text-red-500 text-xs mb-2">{editError}</p>}
+                    <div className="flex gap-3 mt-3">
+                      <button onClick={() => setEditingPlayer(null)} className="flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-600">Cancel</button>
+                      <button onClick={handleSaveHcp} disabled={savingHcp} className="flex-1 py-2.5 text-white rounded-lg text-sm font-medium disabled:opacity-60" style={{ background: '#1B4332' }}>
+                        {savingHcp ? 'Saving...' : 'Save'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
               )}
 
               {/* Reset confirm modal */}
@@ -454,13 +432,9 @@ export default function Home() {
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                   <div className="bg-white rounded-xl p-6 max-w-xs w-full text-center shadow-xl">
                     <h4 className="text-base font-medium text-gray-800 mb-2">Reset season scores?</h4>
-                    <p className="text-sm text-gray-500 mb-5 leading-relaxed">
-                      This clears all round results. Player names and handicaps are kept. This cannot be undone.
-                    </p>
+                    <p className="text-sm text-gray-500 mb-5 leading-relaxed">This clears all round results. Player names and handicaps are kept. This cannot be undone.</p>
                     <div className="flex gap-3">
-                      <button onClick={() => setShowReset(false)} className="flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-600">
-                        Cancel
-                      </button>
+                      <button onClick={() => setShowReset(false)} className="flex-1 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-600">Cancel</button>
                       <button onClick={handleReset} disabled={resetting} className="flex-1 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium disabled:opacity-60">
                         {resetting ? 'Resetting...' : 'Reset season'}
                       </button>
