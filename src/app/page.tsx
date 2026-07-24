@@ -288,7 +288,7 @@ export default function Home() {
               {submitMsg && (
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 text-green-700 text-sm text-center">{submitMsg}</div>
               )}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
                 {[
                   { label: 'Date', el: <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-800" /> },
                   { label: 'Course', el: <input type="text" value={course} onChange={e => setCourse(e.target.value)} placeholder="e.g. Royal Norwich" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white text-gray-800" /> },
